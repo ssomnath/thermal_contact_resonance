@@ -19,8 +19,9 @@ Function CRSweepDriver()
 	// Create a data folder in Packages to store globals.
 	NewDataFolder/O/S root:packages:CRSweep
 	
-	Variable sweepWidth = NumVarOrDefault(":gSweepWidth",10)
-	Variable/G gSweepWidth= sweepWidth; // kHz
+	Wave mastervariables = root:Packages:MFP3D:Main:Variables:MasterVariablesWave
+	Variable/G gSweepWidth= mastervariables[%SweepWidth][%Value]/1000;
+	Variable/G gDriveFreq = mastervariables[%DriveFrequency][%Value]/1000;
 		
 	Variable dCOffset = NumVarOrDefault(":gDCOffset",0)
 	Variable/G gDCOffset= dCOffset
@@ -43,8 +44,6 @@ Function CRSweepDriver()
 	Variable/G gProgress= 0
 	
 	Variable/G gAbortTunes = 0
-	
-	Make/O/N=0 freqWave
 	
 	String pathname = StrVarOrDefault(":gPathName","C:Users:somnath2:Desktop:");
 	String/G gPathName = pathname
@@ -86,14 +85,14 @@ Window CRSweepPanel(): Panel
 	SetVariable sv_EndV,pos={210,16},size={105,20},title="Final (V)", limits={0.1,10,1}
 	SetVariable sv_EndV, value=root:Packages:CRSweep:gVend
 	
-	SetVariable sv_VdcStep,pos={16,55},size={112,18},title="DC step (V)", limits={0.001,9,0.01}
+	SetVariable sv_VdcStep,pos={187,55},size={129,18},title="DC step (V)", limits={0.001,9,0.01}
 	SetVariable sv_VdcStep,value= root:packages:CRSweep:gVStep,live= 1
 	
-	//ValDisplay sv_steps,pos={205,55},size={112,18},title="Num steps"
-	//ValDisplay sv_steps,value= root:packages:CRSweep:gNumVoltSteps,live= 1
-	
-	SetVariable sv_SweepWidth,pos={16,97},size={150,18},title="Sweep Width (kHz)", limits={1,inf,1}
-	SetVariable sv_SweepWidth,value= root:packages:CRSweep:gSweepWidth,live= 1
+	SetVariable sv_driveFreq,pos={16,55},size={155,18},title="Drive Freq (kHz)", limits={1,999,1}
+	SetVariable sv_driveFreq,value= root:packages:CRSweep:gDriveFreq,live= 1, proc=updateDriveFreq;
+				
+	SetVariable sv_SweepWidth,pos={16,97},size={165,18},title="Sweep Width (kHz)", limits={1,inf,1}
+	SetVariable sv_SweepWidth,live= 1,value=root:Packages:CRSweep:gSweepWidth,proc=updateSweepWidth;
 	
 	SetVariable TuneTimeSetVar_3,pos={196,97},size={120,18},title="Time (sec)", limits={0,inf,1}, proc=setMyTuneTime
 	SetVariable TuneTimeSetVar_3, value=root:packages:MFP3D:Main:Variables:ThermalVariablesWave[%TuneTime][%Value]
@@ -145,6 +144,44 @@ Function updateBaseName(sva) : SetVariableControl
 			endif
 	
 			SetDataFolder dfSave;
+			break
+		case -1: // control being killed
+			break
+	endswitch
+
+	return 0
+End
+
+Function updateSweepWidth(sva) : SetVariableControl
+	STRUCT WMSetVariableAction &sva
+
+	switch( sva.eventCode )
+		case 1: // mouse up
+		case 2: // Enter key
+		case 3: // Live update
+						
+			Wave mastervariables = root:Packages:MFP3D:Main:Variables:MasterVariablesWave
+			mastervariables[%SweepWidth][%Value] = sva.dval*1000; // sweep width (Hz)
+			
+			break
+		case -1: // control being killed
+			break
+	endswitch
+
+	return 0
+End
+
+Function updateDriveFreq(sva) : SetVariableControl
+	STRUCT WMSetVariableAction &sva
+
+	switch( sva.eventCode )
+		case 1: // mouse up
+		case 2: // Enter key
+		case 3: // Live update
+						
+			Wave mastervariables = root:Packages:MFP3D:Main:Variables:MasterVariablesWave
+			mastervariables[%DriveFrequency][%Value] = sva.dval*1000; // sweep width (Hz)
+			
 			break
 		case -1: // control being killed
 			break
@@ -206,12 +243,14 @@ function startTunes(ctrlname) : ButtonControl
 	String dfSave = GetDataFolder(1)
 	
 	SetDataFolder root:packages:CRSweep
-	NVAR gSweepWidth, gProgress
+	NVAR gProgress
 	SVAR gTimeLeft
 	gTimeLeft = ""
 	
-	Make/O/N=1 freqWave;
-	freqWave[0] = 795;
+	
+	// Use these waves if you want to swep multiple eigenmodes
+	//Make/O/N=1 freqWave;
+	//freqWave[0] = 138.5;
 	//freqWave[1] = 186;
 	//freqWave[2] = 639;<----
 	//freqWave[3] = 680;
@@ -220,8 +259,8 @@ function startTunes(ctrlname) : ButtonControl
 	//freqWave[6] = 680.8;
 	//freqWave[7] = 990.5;
 	
-	Make/O/N=1 widthWave;
-	widthWave[0] = 50;
+	//Make/O/N=1 widthWave;
+	//widthWave[0] = 10;
 	//widthWave[1] = 10;
 	//widthWave[2] = 30;
 	//widthWave[3] = 30;
@@ -234,7 +273,7 @@ function startTunes(ctrlname) : ButtonControl
 	Variable/G gIterStartTick= 0
 	Variable/G gIteration = 0
 	gProgress= 0
-	Variable/G gNumTunes = DimSize(freqWave,0);
+	Variable/G gNumTunes = 1//DimSize(freqWave,0);
 	
 	Variable/G gVoltIteration = 0;
 	NVAR gVend, gVstart, gVstep, gNumVoltSteps;
@@ -243,6 +282,13 @@ function startTunes(ctrlname) : ButtonControl
 	Make/O/N=0 TuneWave
 	
 	SetDataFolder dfSave
+	
+	// set window size here:
+	//Wave mastervariables = root:Packages:MFP3D:Main:Variables:MasterVariablesWave
+	//mastervariables[18][0] = widthWave[gIteration] *1000; // sweep width (Hz)
+	//mastervariables[%SweepWidth][%Value] = widthWave[gIteration] *1000; // sweep width (Hz)
+	
+	//FMapSetVarFunc(InfoStruct)
 		
 	ModifyControl but_startRamp, disable=2, title="Running.."
 
@@ -260,7 +306,7 @@ Function bgTuneIterations()
 	NVAR gAbortTunes, gIterStartTick, gIteration
 	NVAR gVstart, gVstep, gVoltIteration, gNumVoltSteps, gDCOffset;
 	
-	Wave freqWave,widthWave
+	//Wave freqWave,widthWave
 	
 	Wave thermalWave = root:Packages:MFP3D:Main:Variables:ThermalVariablesWave
 	Variable tuneDuration = thermalWave[%TuneTime][%Value];
@@ -277,13 +323,9 @@ Function bgTuneIterations()
 	// Case 1: Begining of iteration - Must begin tune
 	if(gIterStartTick == 0)
 				
-		// set freq:
-		Wave mastervariables = root:Packages:MFP3D:Main:Variables:MasterVariablesWave
-		mastervariables[17][0] = freqWave[gIteration] * 1000; // freq (Hz)
-		
-		// set window size here:
+		// set drive freq and sweep width here:
 		//Wave mastervariables = root:Packages:MFP3D:Main:Variables:MasterVariablesWave
-		mastervariables[18][0] = widthWave[gIteration] *1000; // sweep width (Hz)
+		//mastervariables[17][0] = freqWave[gIteration] * 1000; // freq (Hz)
 		
 		// Cannot set using td_wv since it will be reset in GetDDSOffset() in Thermal.ipf
 		// td_wv("lockin.DCOffset",gVstart + gVoltIteration*gVStep);
@@ -360,14 +402,14 @@ Function bgTuneIterations()
 			
 			if(gVoltIteration == gNumVoltSteps)
 				gSweepIndex = gSweepIndex+1;
-				print "ending background function now"
+				//print "ending background function now"
 				gDCOffset = 0;
 				td_wv("lockin.DCOffset",0);
 				SetDataFolder dfSave
 				ModifyControl but_startRamp, disable=0, title="Start"
 				
 				// withdraw the cantilever to prevent damage:
-				SimpleEngageMe("SimpleEngageButton")
+				//SimpleEngageMe("SimpleEngageButton")
 				
 				return 1;
 				
