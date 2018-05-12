@@ -23,10 +23,7 @@ Function CRSweepDriver()
 		
 	Variable sweepWidth = NumVarOrDefault(":gSweepWidth",10)
 	Variable/G gSweepWidth= sweepWidth; // kHz
-	
-	Variable tuneDuration = NumVarOrDefault(":gTuneDuration",3)
-	Variable/G gTuneDuration= tuneDuration // sec
-	
+		
 	Variable dCOffset = NumVarOrDefault(":gDCOffset",0)
 	Variable/G gDCOffset= dCOffset
 	
@@ -78,10 +75,13 @@ Window CRSweepPanel(): Panel
 	SetVariable sv_StartV,pos={16,16},size={112,18},title="DC initial (V)", limits={0,10,1}
 	SetVariable sv_StartV,value= root:packages:CRSweep:gVstart,live= 1
 	
+	ValDisplay vd_CurrVoltage,pos={149,18},size={35,20},mode=0, live=1
+	ValDisplay vd_CurrVoltage, value=root:Packages:CRSweep:gDCOffset
+	
 	SetVariable sv_EndV,pos={205,16},size={112,20},title="DC Final (V)", limits={0.1,10,1}
 	SetVariable sv_EndV, value=root:Packages:CRSweep:gVend
 	
-	SetVariable sv_VdcStep,pos={16,55},size={112,18},title="DC step (V)", limits={0.1,10,.01}
+	SetVariable sv_VdcStep,pos={16,55},size={112,18},title="DC step (V)", limits={0.001,9,0.01}
 	SetVariable sv_VdcStep,value= root:packages:CRSweep:gVStep,live= 1
 	
 	ValDisplay sv_steps,pos={205,55},size={112,18},title="Num steps"
@@ -90,9 +90,9 @@ Window CRSweepPanel(): Panel
 	SetVariable sv_SweepWidth,pos={16,97},size={150,18},title="Sweep Width (kHz)", limits={1,inf,1}
 	SetVariable sv_SweepWidth,value= root:packages:CRSweep:gSweepWidth,live= 1
 	
-	SetVariable sv_delay,pos={196,97},size={120,18},title="Time (sec)", limits={0,inf,1}
-	SetVariable sv_delay, value=root:Packages:CRSweep:gTuneDuration
-	
+	SetVariable TuneTimeSetVar_3,pos={196,97},size={120,18},title="Time (sec)", limits={0,inf,1}, proc=setMyTuneTime
+	SetVariable TuneTimeSetVar_3, value=:packages:MFP3D:Main:Variables:ThermalVariablesWave[%TuneTime][%Value]
+		
 	SetVariable sv_PathName,pos={16,133},size={300,25},title="File Path"
 	SetVariable sv_PathName, value=root:Packages:CRSweep:gPathName	
 	
@@ -116,6 +116,32 @@ Window CRSweepPanel(): Panel
 	SetDrawEnv textrgb= (0,0,65280)
 	DrawText 143,295, "\Z13Suhas Somnath, UIUC 2014"
 End	
+
+Function setMyTuneTime(sva) : SetVariableControl
+	STRUCT WMSetVariableAction &sva
+
+	switch( sva.eventCode )
+		case 1: // mouse up
+		case 2: // Enter key
+		case 3: // Live update
+			Variable dval = sva.dval
+			String sval = sva.sval + " S"
+
+			TuneSetVarFunc("TuneTimeSetVar_3",dval,sval,"ThermalVariablesWave[%TuneTime][%Value]")		//takes care of all of the SetVars on the Tune panel
+
+			break
+		case -1: // control being killed
+			break
+	endswitch
+
+	return 0
+End
+	
+		//String ctrlName
+	//Variable varNum
+	//String varStr			//this contains any letters as clues for range changes
+	//String varName
+end
 
 Function StopSweeps(ctrlname) : ButtonControl
 	String ctrlname
@@ -143,17 +169,27 @@ function startTunes(ctrlname) : ButtonControl
 	String dfSave = GetDataFolder(1)
 	
 	SetDataFolder root:packages:CRSweep
-	NVAR gTuneDuration, gSweepWidth, gProgress
+	NVAR gSweepWidth, gProgress
 	
-	Make/O/N=8 freqWave;
-	freqWave[0] = 100.1;
-	freqWave[1] = 107;
-	freqWave[2] = 213;
-	freqWave[3] = 490;
-	freqWave[4] = 509.65;
-	freqWave[5] = 603.5;
-	freqWave[6] = 679.5;
-	freqWave[7] = 988;
+	Make/O/N=1 freqWave;
+	freqWave[0] = 100;
+	//freqWave[1] = 107.5;
+	//freqWave[2] = 213.5;
+	//freqWave[3] = 490.7;
+	//freqWave[4] = 510;
+	//freqWave[5] = 603.6;
+	//freqWave[6] = 680.8;
+	//freqWave[7] = 990.5;
+	
+	Make/O/N=1 widthWave;
+	widthWave[0] = 1000;
+	//widthWave[1] = 10;
+	//widthWave[2] = 30;
+	//widthWave[3] = 30;
+	//widthWave[4] = 30;
+	//widthWave[5] = 30;
+	//widthWave[6] = 30;
+	//widthWave[7] = 10;
 	//Wave freqWave
 	
 	Variable/G gIterStartTick= 0
@@ -165,40 +201,10 @@ function startTunes(ctrlname) : ButtonControl
 	NVAR gVend, gVstart, gVstep, gNumVoltSteps;
 	gNumVoltSteps =  1 + floor(((gVend - gVstart)/gVstep));
 	
-	
-	Variable numPts
-	if(gTuneDuration == 1)
-		gTuneDuration = 0.96
-		numPts = 480;
-	elseif(gTuneDuration == 2)
-		gTuneDuration = 1.984
-		numPts = 992;
-	elseif(gTuneDuration == 3)
-		gTuneDuration = 2.944
-		numPts = 1472;
-	elseif(gTuneDuration == 4)
-		gTuneDuration = 3.968
-		numPts = 1984;
-	elseif(gTuneDuration == 20)
-		gTuneDuration = 19.968
-		numPts = 9984;
-	else
-		gTuneDuration = 2.944
-		numPts = 992;
-	endif
-		
 	Make/O/N=0 TuneWave
-	//Redimension/N=(numPts,gNumTunes*2) TuneWave
 	
 	SetDataFolder dfSave
-	
-	// set window size, etc here:
-	Wave mastervariables = root:Packages:MFP3D:Main:Variables:MasterVariablesWave
-	Wave thermalwave = root:Packages:MFP3D:Main:Variables:ThermalVariablesWave
-	
-	mastervariables[18][0] = gSweepWidth*1000; // sweep width (Hz)
-	thermalwave[43][0] = gTuneDuration; // Tune time (sec)
-
+		
 	ModifyControl but_startRamp, disable=2, title="Running.."
 
 	// Starting background process here:
@@ -212,10 +218,13 @@ Function bgTuneIterations()
 	String dfSave = GetDataFolder(1)
 	
 	SetDataFolder root:packages:CRSweep
-	NVAR gAbortTunes, gIterStartTick, gIteration, gTuneDuration
+	NVAR gAbortTunes, gIterStartTick, gIteration
 	NVAR gVstart, gVstep, gVoltIteration, gNumVoltSteps, gDCOffset;
 	
-	Wave freqWave
+	Wave freqWave,widthWave
+	
+	Wave thermalWave = root:Packages:MFP3D:Main:Variables:ThermalVariablesWave
+	Variable tuneDuration = thermalWave[%TuneTime][%Value];
 			
 	if(gAbortTunes)
 		// safety precautions before exit
@@ -233,6 +242,10 @@ Function bgTuneIterations()
 		Wave mastervariables = root:Packages:MFP3D:Main:Variables:MasterVariablesWave
 		mastervariables[17][0] = freqWave[gIteration] * 1000; // freq (Hz)
 		
+		// set window size here:
+		//Wave mastervariables = root:Packages:MFP3D:Main:Variables:MasterVariablesWave
+		mastervariables[18][0] = widthWave[gIteration] *1000; // sweep width (Hz)
+		
 		// Cannot set using td_wv since it will be reset in GetDDSOffset() in Thermal.ipf
 		// td_wv("lockin.DCOffset",gVstart + gVoltIteration*gVStep);
 		// Use global variable to modify GetDDSOffset()
@@ -242,7 +255,7 @@ Function bgTuneIterations()
 		// I am noticing that the GetDDSOffset() is called when we want to do a tune, not before or after. 				
 		CantTuneFunc("DoTuneOnce_3")
 		
-		print "DC offset was set to " + num2str(td_rv("lockin.DCOffset"));
+		//print "DC offset was set to " + num2str(td_rv("lockin.DCOffset"));
 		
 		gIterStartTick = ticks
 		SetDataFolder dfSave
@@ -255,7 +268,7 @@ Function bgTuneIterations()
 	NVAR gNumTunes, gProgress, gShowTable
 	Wave TuneWave;
 	
-	if(ticks >= (gIterStartTick+(round(gTuneDuration+0.5)* 60)))
+	if(ticks >= (gIterStartTick+(round(tuneDuration+0.5)* 60)))
 		
 		// Case 2: Completed tune
 		
@@ -281,6 +294,7 @@ Function bgTuneIterations()
 		gIterStartTick = 0;
 		
 		SetDataFolder root:packages:CRSweep
+		NVAR gDCOffset
 		
 		// switch to next Vtot if all tunes are complete
 		if(gIteration == gNumTunes)
@@ -303,10 +317,10 @@ Function bgTuneIterations()
 			if(gVoltIteration == gNumVoltSteps)
 				
 				print "ending background function now"
-				
-				ModifyControl but_startRamp, disable=0, title="Start"
+				gDCOffset = 0;
 				td_wv("lockin.DCOffset",0);
 				SetDataFolder dfSave
+				ModifyControl but_startRamp, disable=0, title="Start"
 				return 1;
 				
 			endif
