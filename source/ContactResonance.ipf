@@ -23,10 +23,24 @@ Function CRSweepDriver()
 	Variable/G gSweepWidth= sweepWidth; // kHz
 	
 	Variable tuneDuration = NumVarOrDefault(":gTuneDuration",3)
-	Variable/G gTuneDuration= tuneDuration
+	Variable/G gTuneDuration= tuneDuration // sec
 	
-	Variable showTable = NumVarOrDefault(":gshowTable",1)
+	Variable showTable = NumVarOrDefault(":gshowTable",0)
 	Variable/G gshowTable= showTable
+	
+	
+	Variable Vstart = NumVarOrDefault(":gVstart",1)
+	Variable/G gVstart= Vstart
+	
+	Variable Vend = NumVarOrDefault(":gVend",1.1)
+	Variable/G gVend= Vend
+	
+	Variable dVolts = NumVarOrDefault(":gVStep",0.1)
+	Variable/G gVStep= dVolts
+	
+	String/G gPathName = "C:Users:somnath2:Desktop:";
+	String/G gBaseName = "PI";
+	
 	
 	Variable/G gAbortTunes = 0
 	
@@ -39,42 +53,6 @@ Function CRSweepDriver()
 
 End
 
-function myTest()
-
-	Make/O/N=8 freqWave;
-	freqWave[0] = 100.1;
-	freqWave[1] = 107;
-	freqWave[2] = 213;
-	freqWave[3] = 490;
-	freqWave[4] = 509.65;
-	freqWave[5] = 603.5;
-	freqWave[6] = 679.5;
-	freqWave[7] = 988;
-	
-	Make/O/N=8 ampWave;
-	ampWave[0] = 1.1;
-	ampWave[1] = 1;
-	ampWave[2] = 23;
-	ampWave[3] = 40;
-	ampWave[4] = 59.65;
-	ampWave[5] = 6.5;
-	ampWave[6] = 69.5;
-	ampWave[7] = 9;
-	
-	Make/O/N=8 dumber;
-	dumber[0] = 1.1;
-	dumber[1] = 1;
-	dumber[2] = 23;
-	dumber[3] = 40;
-	dumber[4] = 509.65;
-	dumber[5] = 603.5;
-	dumber[6] = 679.5;
-	dumber[7] = 988;
-	
-	//Concatenate/O {freqWave,ampWave},root:packages:myWave;
-	Concatenate/O {root:packages:myWave,dumber},root:packages:myWave;
-end
-
 function startMyTunes()
 
 	String dfSave = GetDataFolder(1)
@@ -82,21 +60,25 @@ function startMyTunes()
 	SetDataFolder root:packages:CRSweep
 	NVAR gTuneDuration, gSweepWidth
 	
-	Make/O/N=8 freqWave;
+	Make/O/N=3 freqWave;
 	freqWave[0] = 100.1;
 	freqWave[1] = 107;
 	freqWave[2] = 213;
-	freqWave[3] = 490;
-	freqWave[4] = 509.65;
-	freqWave[5] = 603.5;
-	freqWave[6] = 679.5;
-	freqWave[7] = 988;
+	//freqWave[3] = 490;
+	//freqWave[4] = 509.65;
+	//freqWave[5] = 603.5;
+	//freqWave[6] = 679.5;
+	//freqWave[7] = 988;
 	//Wave freqWave
 	
 	Variable/G gIterStartTick= 0
 	Variable/G gIteration = 0
 	Variable/G gProgress= 0
 	Variable/G gNumTunes = DimSize(freqWave,0);
+	
+	Variable/G gVoltIteration = 0;
+	NVAR gVend, gVstart, gVstep;
+	Variable/G gNumVoltSteps =  1 + floor(((gVend - gVstart)/gVstep));
 	
 	Variable numPts
 	if(gTuneDuration == 1)
@@ -120,7 +102,7 @@ function startMyTunes()
 	endif
 		
 	Make/O/N=0 TuneWave
-	Redimension/N=(numPts,gNumTunes*2) TuneWave
+	//Redimension/N=(numPts,gNumTunes*2) TuneWave
 	
 	SetDataFolder dfSave
 	
@@ -143,6 +125,8 @@ Function bgTuneIterations()
 	
 	SetDataFolder root:packages:CRSweep
 	NVAR gAbortTunes, gIterStartTick, gIteration, gTuneDuration
+	NVAR gVstart, gVstep, gVoltIteration, gNumVoltSteps;
+	
 	Wave freqWave
 		
 	if(gAbortTunes)
@@ -153,11 +137,14 @@ Function bgTuneIterations()
 	
 	// Case 1: Begining of iteration - Must begin tune
 	if(gIterStartTick == 0)
-			
-		// set freq here:
+				
+		// set freq:
 		Wave mastervariables = root:Packages:MFP3D:Main:Variables:MasterVariablesWave
 		mastervariables[17][0] = freqWave[gIteration] * 1000; // freq (Hz)
-			
+		
+		// set voltage next AGAIN because it always gets reset by above commands
+		td_wv("lockin.DCOffset",gVstart + gVoltIteration*gVStep);
+					
 		CantTuneFunc("DoTuneOnce_3")
 		
 		gIterStartTick = ticks
@@ -171,7 +158,7 @@ Function bgTuneIterations()
 	NVAR gNumTunes, gProgress, gShowTable
 	Wave TuneWave;
 	
-	if(ticks >= (gIterStartTick+(round(gTuneDuration)* 60)))
+	if(ticks >= (gIterStartTick+(round(gTuneDuration+0.5)* 60)))
 		
 		// Case 2: Completed tune
 		
@@ -189,18 +176,41 @@ Function bgTuneIterations()
 		
 		// update globals
 		gIteration = gIteration+1;
-		gProgress = min(100,floor((gIteration/gNumTunes)*100))
+		
+		Variable tmep = (gIteration + gVoltIteration*gNumTunes)/(gNumTunes*gNumVoltSteps);
+		gProgress = min(100,floor(tmep*100));
+		
 		// reset timer
 		gIterStartTick = 0;
 		
-		// stop BG if all tunes are complete
+		SetDataFolder root:packages:CRSweep
+		
+		// switch to next Vtot if all tunes are complete
 		if(gIteration == gNumTunes)
+		
+			//if(gShowTable)
+				//print GetDataFolder(1)
+				//Wave TuneWave
+				//Edit/K=1 TuneWave
+			//endif
+			
+			// write table to file:
+			writeDataToDisk(gVstart + gVoltIteration*gVStep)
+		
+			// update indices
+			gVoltIteration = gVoltIteration +1;
+			gIteration = 0;
+			
 			// clean up here and exit BG
-			if(gShowTable)
-				Edit/K=1 TuneWave
+			
+			if(gVoltIteration == gNumVoltSteps)
+				
+				td_wv("lockin.DCOffset",0);
+				SetDataFolder dfSave
+				return 1;
+				
 			endif
-			SetDataFolder dfSave
-			return 1;
+			
 		endif
 
 	endif
@@ -211,3 +221,33 @@ Function bgTuneIterations()
 
 End
 
+function writeDataToDisk(Vtot)
+	Variable Vtot
+	
+	String dfSave = GetDataFolder(1)
+	SetDataFolder root:packages:CRSweep
+	
+	SVAR gBaseName, gPathName
+		
+	Wave TuneWave
+	
+	//1. Get the correct path and file name of the file
+	
+			//Flags:
+		// /C:	The folder specified by "path" is created if it does not already exist.
+		// /O	Overwrites the symbolic path if it exists.
+		// /Q	Suppresses printing path information in the history
+		// /Z	Doesn't generate an error if the folder does not exist.
+	NewPath/O/Q/C Path1, gPathName+ gBaseName + ":"
+
+	String basefilename = gBaseName + "_V_" + num2str(Vtot) + ".txt";
+	
+	//2. write to file
+		// O - overwrite ok, J - tab limted
+	Save /O/J/P=Path1 TuneWave as (basefilename)
+
+	Redimension /N=(0) TuneWave
+	
+	SetDataFolder dfSave
+	
+end
