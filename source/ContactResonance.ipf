@@ -19,8 +19,6 @@ Function CRSweepDriver()
 	// Create a data folder in Packages to store globals.
 	NewDataFolder/O/S root:packages:CRSweep
 	
-	//Datafolderexists("root:packages:CRSweep")
-		
 	Variable sweepWidth = NumVarOrDefault(":gSweepWidth",10)
 	Variable/G gSweepWidth= sweepWidth; // kHz
 		
@@ -53,6 +51,13 @@ Function CRSweepDriver()
 	
 	String basename = StrVarOrDefault(":gBaseName","Sample");
 	String/G gBaseName = basename
+	
+	String/G gPrevBaseName = basename
+	
+	String/G gTimeLeft = "";
+	
+	Variable sweepIndex = NumVarOrDefault(":gSweepIndex",1)
+	Variable/G gSweepIndex = sweepIndex
 		
 	// Create the control panel.
 	Execute "CRSweepPanel()"
@@ -78,37 +83,40 @@ Window CRSweepPanel(): Panel
 	ValDisplay vd_CurrVoltage,pos={149,18},size={35,20},mode=0, live=1
 	ValDisplay vd_CurrVoltage, value=root:Packages:CRSweep:gDCOffset
 	
-	SetVariable sv_EndV,pos={205,16},size={112,20},title="DC Final (V)", limits={0.1,10,1}
+	SetVariable sv_EndV,pos={210,16},size={105,20},title="Final (V)", limits={0.1,10,1}
 	SetVariable sv_EndV, value=root:Packages:CRSweep:gVend
 	
 	SetVariable sv_VdcStep,pos={16,55},size={112,18},title="DC step (V)", limits={0.001,9,0.01}
 	SetVariable sv_VdcStep,value= root:packages:CRSweep:gVStep,live= 1
 	
-	ValDisplay sv_steps,pos={205,55},size={112,18},title="Num steps"
-	ValDisplay sv_steps,value= root:packages:CRSweep:gNumVoltSteps,live= 1
+	//ValDisplay sv_steps,pos={205,55},size={112,18},title="Num steps"
+	//ValDisplay sv_steps,value= root:packages:CRSweep:gNumVoltSteps,live= 1
 	
 	SetVariable sv_SweepWidth,pos={16,97},size={150,18},title="Sweep Width (kHz)", limits={1,inf,1}
 	SetVariable sv_SweepWidth,value= root:packages:CRSweep:gSweepWidth,live= 1
 	
 	SetVariable TuneTimeSetVar_3,pos={196,97},size={120,18},title="Time (sec)", limits={0,inf,1}, proc=setMyTuneTime
-	SetVariable TuneTimeSetVar_3, value=:packages:MFP3D:Main:Variables:ThermalVariablesWave[%TuneTime][%Value]
+	SetVariable TuneTimeSetVar_3, value=root:packages:MFP3D:Main:Variables:ThermalVariablesWave[%TuneTime][%Value]
 		
 	SetVariable sv_PathName,pos={16,133},size={300,25},title="File Path"
 	SetVariable sv_PathName, value=root:Packages:CRSweep:gPathName	
 	
-	SetVariable sv_ImageBaseName,pos={16,168},size={300,25},title="Base Name"
-	SetVariable sv_ImageBaseName, value=root:Packages:CRSweep:gBaseName	
+	SetVariable sv_ImageBaseName,pos={16,168},size={203,25},title="Base Name"
+	SetVariable sv_ImageBaseName, value=root:Packages:CRSweep:gBaseName, proc=updateBaseName
+	
+	SetVariable sv_suffix,pos={227,168},size={88,18},title="Suffix", limits={1,inf,1}
+	SetVariable sv_suffix,value= root:packages:CRSweep:gSweepIndex,live= 1	
 	
 	ValDisplay vd_Progress,pos={16,203},size={300,20},title="Progress", mode=0, live=1
 	ValDisplay vd_Progress,limits={0,100,0},barmisc={0,40},highColor= (0,43520,65280)
 	ValDisplay vd_Progress, value=root:Packages:CRSweep:GProgress
+		
+	SetVariable vd_timeLeft,pos={167,203},size={65,20},disable=2, title=" ";
+	SetVariable vd_timeLeft,value=root:Packages:CRSweep:gTimeLeft,live= 1
 	
 	Button but_StartRamp,pos={37,236},size={114,25},title="Start", proc=startTunes	
 	
 	Button but_stop,pos={187,236},size={114,25},title="Stop", proc=StopSweeps
-			
-	//Checkbox chk_ShowData, pos = {708, 51}, size={10,10}, title="Show Data", proc=ShowDataChkFun2
-	//Checkbox chk_ShowData, live=1, value=root:Packages:CRSweep:gshowTable
 	
 	SetDataFolder dfSave
 		
@@ -116,6 +124,34 @@ Window CRSweepPanel(): Panel
 	SetDrawEnv textrgb= (0,0,65280)
 	DrawText 143,295, "\Z13Suhas Somnath, UIUC 2014"
 End	
+
+
+Function updateBaseName(sva) : SetVariableControl
+	STRUCT WMSetVariableAction &sva
+
+	switch( sva.eventCode )
+		case 1: // mouse up
+		case 2: // Enter key
+		case 3: // Live update
+			
+			String dfSave = GetDataFolder(1)
+			SetDataFolder root:Packages:CRSweep
+			SVAR gBaseName, gPrevBaseName
+			NVAR gSweepIndex
+			
+			if(cmpstr(gBaseName, gPrevBaseName))
+				gPrevBaseName = gBaseName;
+				gSweepIndex = 1;
+			endif
+	
+			SetDataFolder dfSave;
+			break
+		case -1: // control being killed
+			break
+	endswitch
+
+	return 0
+End
 
 Function setMyTuneTime(sva) : SetVariableControl
 	STRUCT WMSetVariableAction &sva
@@ -151,11 +187,12 @@ Function StopSweeps(ctrlname) : ButtonControl
 	String dfSave = GetDataFolder(1)
 		
 	SetDataFolder root:Packages:CRSweep
-	NVAR gAbortTunes, gDCOffset;
+	NVAR gAbortTunes, gDCOffset, gSweepIndex
 	
 	// stop background function here.
 	gDCOffset = 0;
 	gAbortTunes = 1
+	gSweepIndex = gSweepIndex+1;
 
 	ModifyControl but_StartRamp, disable=0, title="Start"
 	
@@ -170,19 +207,21 @@ function startTunes(ctrlname) : ButtonControl
 	
 	SetDataFolder root:packages:CRSweep
 	NVAR gSweepWidth, gProgress
+	SVAR gTimeLeft
+	gTimeLeft = ""
 	
 	Make/O/N=1 freqWave;
-	freqWave[0] = 100;
-	//freqWave[1] = 107.5;
-	//freqWave[2] = 213.5;
-	//freqWave[3] = 490.7;
-	//freqWave[4] = 510;
-	//freqWave[5] = 603.6;
+	freqWave[0] = 795;
+	//freqWave[1] = 186;
+	//freqWave[2] = 639;<----
+	//freqWave[3] = 680;
+	//freqWave[4] = 828.2;//<----
+	//freqWave[5] = 265;//<----
 	//freqWave[6] = 680.8;
 	//freqWave[7] = 990.5;
 	
 	Make/O/N=1 widthWave;
-	widthWave[0] = 1000;
+	widthWave[0] = 50;
 	//widthWave[1] = 10;
 	//widthWave[2] = 30;
 	//widthWave[3] = 30;
@@ -266,6 +305,7 @@ Function bgTuneIterations()
 	// Tune is running / has run at this stage
 	
 	NVAR gNumTunes, gProgress, gShowTable
+	SVAR gTimeLeft
 	Wave TuneWave;
 	
 	if(ticks >= (gIterStartTick+(round(tuneDuration+0.5)* 60)))
@@ -287,6 +327,10 @@ Function bgTuneIterations()
 		// update globals
 		gIteration = gIteration+1;
 		
+		Variable numItersPending = (gNumTunes*gNumVoltSteps) - (gIteration + gVoltIteration*gNumTunes);
+		numItersPending = round(numItersPending*(tuneDuration+0.5));
+		gTimeLeft = num2str(floor(numItersPending/60)) + " m " + num2str(mod(numItersPending,60)) + " s"
+		
 		Variable tmep = (gIteration + gVoltIteration*gNumTunes)/(gNumTunes*gNumVoltSteps);
 		gProgress = min(100,floor(tmep*100));
 		
@@ -294,7 +338,7 @@ Function bgTuneIterations()
 		gIterStartTick = 0;
 		
 		SetDataFolder root:packages:CRSweep
-		NVAR gDCOffset
+		NVAR gDCOffset, gSweepIndex
 		
 		// switch to next Vtot if all tunes are complete
 		if(gIteration == gNumTunes)
@@ -315,12 +359,16 @@ Function bgTuneIterations()
 			// clean up here and exit BG
 			
 			if(gVoltIteration == gNumVoltSteps)
-				
+				gSweepIndex = gSweepIndex+1;
 				print "ending background function now"
 				gDCOffset = 0;
 				td_wv("lockin.DCOffset",0);
 				SetDataFolder dfSave
 				ModifyControl but_startRamp, disable=0, title="Start"
+				
+				// withdraw the cantilever to prevent damage:
+				SimpleEngageMe("SimpleEngageButton")
+				
 				return 1;
 				
 			endif
@@ -342,6 +390,7 @@ function writeDataToDisk(Vtot)
 	SetDataFolder root:packages:CRSweep
 	
 	SVAR gBaseName, gPathName
+	NVAR gSweepIndex
 		
 	Wave TuneWave
 	
@@ -352,9 +401,10 @@ function writeDataToDisk(Vtot)
 		// /O	Overwrites the symbolic path if it exists.
 		// /Q	Suppresses printing path information in the history
 		// /Z	Doesn't generate an error if the folder does not exist.
-	NewPath/O/Q/C Path1, gPathName+ gBaseName + ":"
+	String temp = gBaseName + "_" + num2str(gSweepIndex);
+	NewPath/O/Q/C Path1, gPathName+ temp + ":"
 
-	String basefilename = gBaseName + "_V_" + num2str(Vtot) + ".txt";
+	String basefilename = temp + "_V_" + num2str(Vtot) + ".txt";
 	
 	//2. write to file
 		// O - overwrite ok, J - tab limted
