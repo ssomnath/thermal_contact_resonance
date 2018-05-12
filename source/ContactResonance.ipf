@@ -239,6 +239,9 @@ End
 
 function startTunes(ctrlname) : ButtonControl
 	String ctrlName;
+	
+	// Load PFM Mode and lock crosspoint:
+	ContactResonanceXPTLock()
 
 	String dfSave = GetDataFolder(1)
 	
@@ -457,3 +460,28 @@ function writeDataToDisk(Vtot)
 	SetDataFolder dfSave
 	
 end
+
+Function ContactResonanceXPTLock()
+
+	XPTPopupFunc("LoadXPTPopup",8,"PFMMeter")
+	WireXpt4("BNCOut0Popup","DDS")
+	XPTBoxFunc("XPTLock10Box_0",1)
+	
+	WireXpt4("ChipPopup","Ground")
+	XPTBoxFunc("XPTLock14Box_0",1)	
+	
+	WireXpt4("ShakePopup","Ground")
+	XPTBoxFunc("XPTLock15Box_0",1)	
+		
+	XptButtonFunc("WriteXPT")
+	XPTButtonFunc("ResetCrosspoint")
+	 // seems to annul all the changes made so far if I used td_WS
+
+End
+
+Function WireXpt4(whichpopup,channel)
+	String whichpopup, channel
+	
+	execute("XPTPopupFunc(\"" + whichpopup + "\",WhichListItem(\""+ channel +"\",Root:Packages:MFP3D:XPT:XPTInputList,\";\",0,0)+1,\""+ channel +"\")")
+
+End
