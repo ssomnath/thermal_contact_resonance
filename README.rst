@@ -9,3 +9,9 @@ instead of conventional non-heating cantilevers.
 
 The challenge was to incorporate electromagnetic actuation through Lorentz force actuation along with
 self-heating through a single excitation signal and measure the material properties.
+
+|interface|
+
+.. |interface| image:: media/interface.PNG
+   :width: 3.12083in
+   :height: 3.22431in
