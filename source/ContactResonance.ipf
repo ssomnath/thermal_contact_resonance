@@ -9,10 +9,10 @@ End
 Function CRSweepDriver()
 	
 	// If the panel is already created, just bring it to the front.
-	//DoWindow/F CRSweepPanel
-	//if (V_Flag != 0)
-	//	return 0
-	//endif
+	DoWindow/F CRSweepPanel
+	if (V_Flag != 0)
+		return 0
+	endif
 	
 	String dfSave = GetDataFolder(1)
 	
@@ -36,29 +36,102 @@ Function CRSweepDriver()
 	Variable/G gVend= Vend
 	
 	Variable dVolts = NumVarOrDefault(":gVStep",0.1)
+	
 	Variable/G gVStep= dVolts
 	
-	String/G gPathName = "C:Users:somnath2:Desktop:";
-	String/G gBaseName = "PI";
+	Variable/G gNumVoltSteps =  1 + floor(((gVend - gVstart)/gVstep));
 	
+	Variable/G gProgress= 0
 	
 	Variable/G gAbortTunes = 0
 	
 	Make/O/N=0 freqWave
+	
+	String pathname = StrVarOrDefault(":gPathName","C:Users:somnath2:Desktop:");
+	String/G gPathName = pathname
+	
+	String basename = StrVarOrDefault(":gBaseName","Sample");
+	String/G gBaseName = basename
 		
 	// Create the control panel.
-	//Execute "LorentzRampPanel()"
+	Execute "CRSweepPanel()"
 	//Reset the datafolder to the root / previous folder
 	SetDataFolder dfSave
 
 End
 
-function startMyTunes()
+
+Window CRSweepPanel(): Panel
+	
+	PauseUpdate; Silent 1		// building window...
+	NewPanel /K=1 /W=(485,145, 820,460) as "Contact Resonance Sweeps"
+	SetDrawLayer UserBack
+		
+	
+	SetVariable sv_StartV,pos={16,16},size={112,18},title="DC initial (V)", limits={0,10,1}
+	SetVariable sv_StartV,value= root:packages:CRSweep:gVstart,live= 1
+	
+	SetVariable sv_EndV,pos={205,16},size={112,20},title="DC Final (V)", limits={0.1,10,1}
+	SetVariable sv_EndV, value=root:Packages:CRSweep:gVend
+	
+	SetVariable sv_VdcStep,pos={16,55},size={112,18},title="DC step (V)", limits={0.1,10,.01}
+	SetVariable sv_VdcStep,value= root:packages:CRSweep:gVStep,live= 1
+	
+	ValDisplay sv_steps,pos={205,55},size={112,18},title="Num steps"
+	ValDisplay sv_steps,value= root:packages:CRSweep:gNumVoltSteps,live= 1
+	
+	SetVariable sv_SweepWidth,pos={16,97},size={150,18},title="Sweep Width (kHz)", limits={1,inf,1}
+	SetVariable sv_SweepWidth,value= root:packages:CRSweep:gSweepWidth,live= 1
+	
+	SetVariable sv_delay,pos={196,97},size={120,18},title="Time (sec)", limits={0,inf,1}
+	SetVariable sv_delay, value=root:Packages:CRSweep:gTuneDuration
+	
+	SetVariable sv_PathName,pos={16,133},size={300,25},title="File Path"
+	SetVariable sv_PathName, value=root:Packages:CRSweep:gPathName	
+	
+	SetVariable sv_ImageBaseName,pos={16,168},size={300,25},title="Base Name"
+	SetVariable sv_ImageBaseName, value=root:Packages:CRSweep:gBaseName	
+	
+	ValDisplay vd_Progress,pos={16,203},size={300,20},title="Progress", mode=0, live=1
+	ValDisplay vd_Progress,limits={0,100,0},barmisc={0,40},highColor= (0,43520,65280)
+	ValDisplay vd_Progress, value=root:Packages:CRSweep:GProgress
+	
+	Button but_StartRamp,pos={37,236},size={114,25},title="Start", proc=startTunes	
+	
+	Button but_stop,pos={187,236},size={114,25},title="Stop", proc=StopSweeps
+			
+	//Checkbox chk_ShowData, pos = {708, 51}, size={10,10}, title="Show Data", proc=ShowDataChkFun2
+	//Checkbox chk_ShowData, live=1, value=root:Packages:CRSweep:gshowTable
+		
+	SetDrawEnv fstyle= 1 
+	SetDrawEnv textrgb= (0,0,65280)
+	DrawText 143,295, "\Z13Suhas Somnath, UIUC 2014"
+End	
+
+Function StopSweeps(ctrlname) : ButtonControl
+	String ctrlname
+	
+	String dfSave = GetDataFolder(1)
+		
+	SetDataFolder root:Packages:CRSweep
+	NVAR gAbortTunes
+	
+	// stop background function here.
+	gAbortTunes = 1
+
+	ModifyControl but_StartRamp, disable=0, title="Start"
+	
+	SetDataFolder dfSave
+	
+End
+
+function startTunes(ctrlname) : ButtonControl
+	String ctrlName;
 
 	String dfSave = GetDataFolder(1)
 	
 	SetDataFolder root:packages:CRSweep
-	NVAR gTuneDuration, gSweepWidth
+	NVAR gTuneDuration, gSweepWidth, gProgress
 	
 	Make/O/N=3 freqWave;
 	freqWave[0] = 100.1;
@@ -73,12 +146,13 @@ function startMyTunes()
 	
 	Variable/G gIterStartTick= 0
 	Variable/G gIteration = 0
-	Variable/G gProgress= 0
+	gProgress= 0
 	Variable/G gNumTunes = DimSize(freqWave,0);
 	
 	Variable/G gVoltIteration = 0;
-	NVAR gVend, gVstart, gVstep;
-	Variable/G gNumVoltSteps =  1 + floor(((gVend - gVstart)/gVstep));
+	NVAR gVend, gVstart, gVstep, gNumVoltSteps;
+	gNumVoltSteps =  1 + floor(((gVend - gVstart)/gVstep));
+	
 	
 	Variable numPts
 	if(gTuneDuration == 1)
@@ -113,6 +187,8 @@ function startMyTunes()
 	mastervariables[18][0] = gSweepWidth*1000; // sweep width (Hz)
 	thermalwave[43][0] = gTuneDuration; // Tune time (sec)
 
+	ModifyControl but_startRamp, disable=2, title="Running.."
+
 	// Starting background process here:
 	ARBackground("bgTuneIterations",100,"")
 end
@@ -131,6 +207,8 @@ Function bgTuneIterations()
 		
 	if(gAbortTunes)
 		// safety precautions before exit
+		td_wv("lockin.DCOffset",0);
+		ModifyControl but_startRamp, disable=0, title="Start"
 		SetDataFolder dfSave
 		return 1;
 	endif
@@ -205,6 +283,7 @@ Function bgTuneIterations()
 			
 			if(gVoltIteration == gNumVoltSteps)
 				
+				ModifyControl but_startRamp, disable=0, title="Start"
 				td_wv("lockin.DCOffset",0);
 				SetDataFolder dfSave
 				return 1;
