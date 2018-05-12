@@ -18,6 +18,8 @@ Function CRSweepDriver()
 	
 	// Create a data folder in Packages to store globals.
 	NewDataFolder/O/S root:packages:CRSweep
+	
+	//Datafolderexists("root:packages:CRSweep")
 		
 	Variable sweepWidth = NumVarOrDefault(":gSweepWidth",10)
 	Variable/G gSweepWidth= sweepWidth; // kHz
@@ -25,9 +27,11 @@ Function CRSweepDriver()
 	Variable tuneDuration = NumVarOrDefault(":gTuneDuration",3)
 	Variable/G gTuneDuration= tuneDuration // sec
 	
-	Variable showTable = NumVarOrDefault(":gshowTable",0)
-	Variable/G gshowTable= showTable
+	Variable dCOffset = NumVarOrDefault(":gDCOffset",0)
+	Variable/G gDCOffset= dCOffset
 	
+	Variable showTable = NumVarOrDefault(":gshowTable",0)
+	Variable/G gshowTable= showTable	
 	
 	Variable Vstart = NumVarOrDefault(":gVstart",1)
 	Variable/G gVstart= Vstart
@@ -62,6 +66,9 @@ End
 
 
 Window CRSweepPanel(): Panel
+
+	String dfSave = GetDataFolder(1)
+	SetDataFolder root:Packages:CRSweep
 	
 	PauseUpdate; Silent 1		// building window...
 	NewPanel /K=1 /W=(485,145, 820,460) as "Contact Resonance Sweeps"
@@ -102,6 +109,8 @@ Window CRSweepPanel(): Panel
 			
 	//Checkbox chk_ShowData, pos = {708, 51}, size={10,10}, title="Show Data", proc=ShowDataChkFun2
 	//Checkbox chk_ShowData, live=1, value=root:Packages:CRSweep:gshowTable
+	
+	SetDataFolder dfSave
 		
 	SetDrawEnv fstyle= 1 
 	SetDrawEnv textrgb= (0,0,65280)
@@ -111,12 +120,15 @@ End
 Function StopSweeps(ctrlname) : ButtonControl
 	String ctrlname
 	
+	td_wv("lockin.DCOffset",0);
+	
 	String dfSave = GetDataFolder(1)
 		
 	SetDataFolder root:Packages:CRSweep
-	NVAR gAbortTunes
+	NVAR gAbortTunes, gDCOffset;
 	
 	// stop background function here.
+	gDCOffset = 0;
 	gAbortTunes = 1
 
 	ModifyControl but_StartRamp, disable=0, title="Start"
@@ -133,15 +145,15 @@ function startTunes(ctrlname) : ButtonControl
 	SetDataFolder root:packages:CRSweep
 	NVAR gTuneDuration, gSweepWidth, gProgress
 	
-	Make/O/N=3 freqWave;
+	Make/O/N=8 freqWave;
 	freqWave[0] = 100.1;
 	freqWave[1] = 107;
 	freqWave[2] = 213;
-	//freqWave[3] = 490;
-	//freqWave[4] = 509.65;
-	//freqWave[5] = 603.5;
-	//freqWave[6] = 679.5;
-	//freqWave[7] = 988;
+	freqWave[3] = 490;
+	freqWave[4] = 509.65;
+	freqWave[5] = 603.5;
+	freqWave[6] = 679.5;
+	freqWave[7] = 988;
 	//Wave freqWave
 	
 	Variable/G gIterStartTick= 0
@@ -201,14 +213,15 @@ Function bgTuneIterations()
 	
 	SetDataFolder root:packages:CRSweep
 	NVAR gAbortTunes, gIterStartTick, gIteration, gTuneDuration
-	NVAR gVstart, gVstep, gVoltIteration, gNumVoltSteps;
+	NVAR gVstart, gVstep, gVoltIteration, gNumVoltSteps, gDCOffset;
 	
 	Wave freqWave
-		
+			
 	if(gAbortTunes)
 		// safety precautions before exit
 		td_wv("lockin.DCOffset",0);
 		ModifyControl but_startRamp, disable=0, title="Start"
+		gAbortTunes = 0;
 		SetDataFolder dfSave
 		return 1;
 	endif
@@ -220,10 +233,16 @@ Function bgTuneIterations()
 		Wave mastervariables = root:Packages:MFP3D:Main:Variables:MasterVariablesWave
 		mastervariables[17][0] = freqWave[gIteration] * 1000; // freq (Hz)
 		
-		// set voltage next AGAIN because it always gets reset by above commands
-		td_wv("lockin.DCOffset",gVstart + gVoltIteration*gVStep);
-					
+		// Cannot set using td_wv since it will be reset in GetDDSOffset() in Thermal.ipf
+		// td_wv("lockin.DCOffset",gVstart + gVoltIteration*gVStep);
+		// Use global variable to modify GetDDSOffset()
+		gDCOffset = gVstart + gVoltIteration*gVStep;
+		GetDDSOffset()
+		
+		// I am noticing that the GetDDSOffset() is called when we want to do a tune, not before or after. 				
 		CantTuneFunc("DoTuneOnce_3")
+		
+		print "DC offset was set to " + num2str(td_rv("lockin.DCOffset"));
 		
 		gIterStartTick = ticks
 		SetDataFolder dfSave
@@ -282,6 +301,8 @@ Function bgTuneIterations()
 			// clean up here and exit BG
 			
 			if(gVoltIteration == gNumVoltSteps)
+				
+				print "ending background function now"
 				
 				ModifyControl but_startRamp, disable=0, title="Start"
 				td_wv("lockin.DCOffset",0);
